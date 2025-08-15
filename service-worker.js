@@ -1,10 +1,12 @@
-const CACHE_NAME = 'ent-photo-editor-v1';
+const CACHE_NAME = 'ent-photo-editor-v2-heic';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  './service-worker.js',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
+  './heic2any.js'
 ];
 
 self.addEventListener('install', (event) => {
@@ -23,7 +25,6 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  // Network-first for non-GET requests
   if (req.method !== 'GET') return;
   event.respondWith((async () => {
     try {
@@ -34,7 +35,6 @@ self.addEventListener('fetch', (event) => {
     } catch(e) {
       const cached = await caches.match(req);
       if (cached) return cached;
-      // Offline fallback to index.html for navigation requests
       if (req.mode === 'navigate') return caches.match('./index.html');
       throw e;
     }
