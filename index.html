@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1220" />
+  <title>EnT Photo Editor</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="EnT Photo Editor">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>EnT Photo Editor</h1>
+    <div class="header-actions">
+      <button id="btnSingle" class="btn">Single</button>
+      <button id="btnCollage" class="btn">Collage</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="card canvas-wrap">
+      <canvas id="canvas" width="900" height="600" aria-label="Editing canvas"></canvas>
+      <canvas id="glStage" style="display:none;"></canvas>
+    </div>
+
+    <div class="card" id="singleControls">
+      <div class="row">
+        <div>
+          <label>Upload Photo</label>
+          <input id="singleUpload" type="file" accept="image/*,.heic,.heif">
+        </div>
+        <div class="controls">
+          <button class="btn" id="toggleBorder" disabled>Border</button>
+          <button class="btn" id="toggleCaption" disabled>Caption</button>
+          <button class="btn" id="toggleEffects" disabled>Effects</button>
+        </div>
+      </div>
+
+      <div id="borderPanel" style="display:none; margin-top:10px;">
+        <details open>
+          <summary>Border Options</summary>
+          <div class="row">
+            <div>
+              <label>Color</label>
+              <input id="borderColor" type="color" value="#ffffff">
+            </div>
+            <div>
+              <label>Thickness</label>
+              <input id="borderSize" class="slider" type="range" min="0" max="200" value="20">
+            </div>
+          </div>
+          <div class="row single" style="margin-top:8px;">
+            <label>Position</label>
+            <select id="borderPos">
+              <option value="all">All sides</option>
+              <option value="topBottom">Top &amp; Bottom</option>
+              <option value="leftRight">Left &amp; Right</option>
+            </select>
+          </div>
+        </details>
+      </div>
+
+      <div id="captionPanel" style="display:none; margin-top:10px;">
+        <details open>
+          <summary>Caption &amp; Emoji</summary>
+          <div class="row">
+            <div>
+              <label>Text</label>
+              <input id="captionText" type="text" placeholder="Type a caption…">
+            </div>
+            <div>
+              <label>Font</label>
+              <select id="captionFont">
+                <option>Arial</option>
+                <option>Georgia</option>
+                <option>Courier New</option>
+                <option>Trebuchet MS</option>
+                <option>Verdana</option>
+                <option>Times New Roman</option>
+              </select>
+            </div>
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <div>
+              <label>Size</label>
+              <input id="captionSize" class="slider" type="range" min="10" max="160" value="44">
+            </div>
+            <div>
+              <label>Color</label>
+              <input id="captionColor" type="color" value="#ffffff">
+            </div>
+          </div>
+          <div style="margin-top:8px;">
+            <button class="btn" id="toggleEmojiPicker" type="button">😀 Emoji</button>
+            <div id="emojiPicker" style="display:none; grid-template-columns: repeat(8, 1fr); gap:6px; margin-top:8px;"></div>
+          </div>
+          <p style="color:var(--muted);margin-top:6px;">Tip: Tap the caption on the canvas and drag to move it.</p>
+        </details>
+      </div>
+
+      <div id="effectsPanel" style="display:none; margin-top:10px;">
+        <details open>
+          <summary>Photo Effects</summary>
+          <div class="row">
+            <div>
+              <label>Temperature</label>
+              <input id="fxTemp" class="slider" type="range" min="-100" max="100" value="0">
+            </div>
+            <div>
+              <label>Tone (Gamma)</label>
+              <input id="fxTone" class="slider" type="range" min="-50" max="50" value="0">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>Exposure (stops)</label>
+              <input id="fxExposure" class="slider" type="range" min="-5" max="5" value="0">
+            </div>
+            <div>
+              <label>Brightness</label>
+              <input id="fxBrightness" class="slider" type="range" min="0" max="200" value="100">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>Contrast</label>
+              <input id="fxContrast" class="slider" type="range" min="0" max="200" value="100">
+            </div>
+            <div>
+              <label>Saturation</label>
+              <input id="fxSaturation" class="slider" type="range" min="0" max="200" value="100">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>Blur</label>
+              <input id="fxBlur" class="slider" type="range" min="0" max="10" value="0">
+            </div>
+            <div>
+              <label>Grayscale</label>
+              <input id="fxGray" class="slider" type="range" min="0" max="100" value="0">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>Sepia</label>
+              <input id="fxSepia" class="slider" type="range" min="0" max="100" value="0">
+            </div>
+            <div>
+              <label>Invert</label>
+              <input id="fxInvert" class="slider" type="range" min="0" max="100" value="0">
+            </div>
+          </div>
+          <div style="margin-top:10px; display:flex; justify-content:flex-end;">
+            <button id="effectsReset" class="btn">Reset</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="toolbar">
+        <div class="group">
+          <button class="btn" id="singleShare" disabled>Share</button>
+          <button class="btn" id="singleDownload" disabled>Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="collageControls" style="display:none;">
+      <div class="row">
+        <div>
+          <label>Add Photos</label>
+          <input id="collageUpload" type="file" accept="image/*" multiple>
+        </div>
+        <div class="controls">
+          <button class="btn" id="bringFront" type="button">Bring Front</button>
+          <button class="btn" id="sendBack" type="button">Send Back</button>
+          <button class="btn" id="deleteItem" type="button">Delete</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="group">
+          <button class="btn" id="collageShare">Share</button>
+          <button class="btn" id="collageDownload">Save</button>
+        </div>
+      </div>
+      <p style="color:var(--muted);margin:8px 4px 0;">(Collage arranging coming next; single mode is fully functional.)</p>
+    </div>
+
+  </main>
+</div>
+
+<div class="modal-mask" id="modalMask" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="heicTitle">
+    <header>
+      <h2 id="heicTitle" style="font-size:1rem;margin:0;">Convert HEIC</h2>
+    </header>
+    <div class="content">
+      <p>You selected a <strong>.heic</strong> file. Convert it to continue?</p>
+      <p id="heicError" style="display:none;color:#ffb3b3;margin-top:6px;"></p>
+    </div>
+    <div class="actions">
+      <button id="toJPG" class="btn primary">Convert to JPG</button>
+      <button id="toPNG" class="btn">Convert to PNG</button>
+      <button id="cancelHeic" class="btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script src="heic2any.js" defer></script>
+</body>
+</html>
