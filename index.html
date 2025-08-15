@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Photo Editor (GPU) — Single & Collage</title>
+<style>
+  :root{
+    --bg:#0f1220; --panel:#191e2e; --panel-2:#1f2538; --text:#e7eaf3; --muted:#97a0b8;
+    --accent:#5b8cff; --accent-700:#4678ff; --border:#2a3047; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  header{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+  h1{font-size:1.1rem;margin:0;color:#fff;opacity:.95;letter-spacing:.2px}
+  .modes{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{
+    appearance:none;border:1px solid var(--border);background:var(--panel-2);color:var(--text);
+    padding:10px 14px;border-radius:10px;cursor:pointer;font-size:0.95rem;transition:.15s;
+  }
+  .btn:hover{transform:translateY(-1px)}
+  .btn.active{outline:2px solid var(--accent);outline-offset:2px}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-700)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .danger{background:#d9534f;border-color:#d9534f}
+
+  .panels{display:grid;gap:12px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px}
+  .panel h2{font-size:1rem;margin:0 0 10px;color:#fff}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .row.single{grid-template-columns:1fr}
+  label{font-size:.92rem;color:var(--muted)}
+  input[type="file"], input[type="color"], input[type="text"], select, .slider{
+    width:100%;border:1px solid var(--border);background:var(--panel-2);color:var(--text);
+    padding:10px;border-radius:10px;font-size:.95rem;
+  }
+  input[type="color"]{padding:4px;height:44px}
+  .slider{appearance:none;height:6px;padding:0;border-radius:999px;background:#2b3150}
+  .slider::-webkit-slider-thumb{appearance:none;width:18px;height:18px;border-radius:50%;background:var(--accent);cursor:pointer}
+  .hint{color:var(--muted);font-size:.9rem;margin-top:6px}
+  details{background:var(--panel-2);border:1px solid var(--border);border-radius:12px;padding:10px}
+  summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;font-weight:600}
+  summary::-webkit-details-marker{display:none}
+  .tagbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .tag{padding:8px 10px;border-radius:999px;background:#242b46;border:1px solid var(--border);cursor:pointer}
+  .tag.active{background:#2f385e;outline:2px solid var(--accent)}
+
+  .emoji-grid{
+    display:grid;grid-template-columns:repeat(auto-fill, minmax(44px,1fr));gap:6px;margin-top:8px;
+    max-height:160px;overflow:auto;padding:6px;background:#141a2d;border-radius:10px;border:1px solid var(--border);
+  }
+  .emoji-btn{font-size:24px;line-height:42px;text-align:center;cursor:pointer;background:#1a2140;border:1px solid var(--border);border-radius:10px}
+  .emoji-btn:hover{background:#222a4d}
+
+  .tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .tools .btn{white-space:nowrap}
+  .toolRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+
+  .canvasWrap{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px}
+  canvas{width:100%;height:auto;display:block;background:#0b1024;border:1px dashed #2c3454;border-radius:12px;touch-action:none}
+  @media (max-width:740px){ .row{grid-template-columns:1fr} .tools .btn{flex:1} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Photo Editor (GPU)</h1>
+    <div class="modes">
+      <button id="btnSingle" class="btn active">Single Photo</button>
+      <button id="btnCollage" class="btn">Collage</button>
+    </div>
+  </header>
+
+  <!-- SINGLE MODE -->
+  <section id="singleUI" class="panels">
+    <div class="panel">
+      <h2>Load Photo</h2>
+      <div class="row single">
+        <label>Upload image
+          <input type="file" id="singleUpload" accept="image/*">
+        </label>
+      </div>
+      <div class="tools">
+        <button id="toggleBorder" class="btn" disabled>Border</button>
+        <button id="toggleCaption" class="btn" disabled>Caption</button>
+        <button id="toggleEffects" class="btn" disabled>Photo Effects</button>
+        <button id="singleShare" class="btn" disabled>Share</button>
+        <button id="singleDownload" class="btn primary" disabled>Download</button>
+      </div>
+    </div>
+
+    <details id="borderPanel" style="display:none">
+      <summary>Border</summary>
+      <div class="row" style="margin-top:8px">
+        <label>Border color
+          <input type="color" id="borderColor" value="#ffffff">
+        </label>
+        <label>Border thickness (px)
+          <input type="range" id="borderSize" min="0" max="400" value="20" class="slider">
+        </label>
+        <label>Border position
+          <select id="borderPos">
+            <option value="all">All sides</option>
+            <option value="topBottom">Top & Bottom</option>
+            <option value="leftRight">Left & Right</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">Default border color is white.</p>
+    </details>
+
+    <details id="captionPanel" style="display:none">
+      <summary>Caption</summary>
+      <div class="row" style="margin-top:8px">
+        <label>Text
+          <input type="text" id="captionText" placeholder="Type caption… (emoji supported)">
+        </label>
+        <label>Font size (px)
+          <input type="range" id="captionSize" min="10" max="160" value="44" class="slider">
+        </label>
+        <label>Font color
+          <input type="color" id="captionColor" value="#ffffff">
+        </label>
+        <label>Font family
+          <select id="captionFont">
+            <option>Arial</option>
+            <option>Verdana</option>
+            <option>Georgia</option>
+            <option>"Times New Roman"</option>
+            <option>Courier New</option>
+          </select>
+        </label>
+      </div>
+      <div class="tagbar">
+        <span class="tag" id="toggleEmojiPicker">Emoji Picker</span>
+        <span class="hint">Drag the caption on the canvas to position it.</span>
+      </div>
+      <div id="emojiPicker" class="emoji-grid" style="display:none"></div>
+    </details>
+
+    <details id="effectsPanel" style="display:none">
+      <summary>Photo Effects (GPU)</summary>
+      <div class="row" style="margin-top:8px">
+        <label>Temperature (Cool ← → Warm)
+          <input type="range" id="fxTemp" class="slider" min="-100" max="100" value="0">
+        </label>
+        <label>Tone (Gamma / Midtones)
+          <input type="range" id="fxTone" class="slider" min="-100" max="100" value="0">
+        </label>
+        <label>Exposure
+          <input type="range" id="fxExposure" class="slider" min="-100" max="100" value="0">
+        </label>
+        <label>Brightness
+          <input type="range" id="fxBrightness" class="slider" min="0" max="200" value="100">
+        </label>
+        <label>Contrast
+          <input type="range" id="fxContrast" class="slider" min="0" max="200" value="100">
+        </label>
+        <label>Saturation
+          <input type="range" id="fxSaturation" class="slider" min="0" max="250" value="100">
+        </label>
+        <label>Blur / Smoothness
+          <input type="range" id="fxBlur" class="slider" min="0" max="10" value="0">
+        </label>
+        <label>Grayscale
+          <input type="range" id="fxGray" class="slider" min="0" max="100" value="0">
+        </label>
+        <label>Sepia
+          <input type="range" id="fxSepia" class="slider" min="0" max="100" value="0">
+        </label>
+        <label>Invert
+          <input type="range" id="fxInvert" class="slider" min="0" max="100" value="0">
+        </label>
+      </div>
+      <div class="tools">
+        <button id="effectsReset" class="btn">Reset Effects</button>
+      </div>
+      <p class="hint">Powered by WebGL for smooth, real-time adjustments.</p>
+    </details>
+  </section>
+
+  <!-- COLLAGE MODE -->
+  <section id="collageUI" class="panels" style="display:none">
+    <div class="panel">
+      <h2>Collage</h2>
+      <div class="row single">
+        <label>Upload multiple images
+          <input type="file" id="collageUpload" accept="image/*" multiple>
+        </label>
+      </div>
+      <div class="toolRow">
+        <button id="bringFront" class="btn" disabled>Bring to front</button>
+        <button id="sendBack" class="btn" disabled>Send to back</button>
+        <button id="deleteItem" class="btn danger" disabled>Delete selected</button>
+        <button id="collageShare" class="btn" disabled>Share</button>
+        <button id="collageDownload" class="btn primary" disabled>Download Collage</button>
+      </div>
+      <details style="margin-top:8px">
+        <summary>Background</summary>
+        <div class="row" style="margin-top:8px">
+          <label>Background color
+            <input type="color" id="bgColor" value="#0b1024">
+          </label>
+          <label>Background image
+            <input type="file" id="bgImageInput" accept="image/*">
+          </label>
+          <label>Image fit
+            <select id="bgFit">
+              <option value="cover">Cover</option>
+              <option value="contain">Contain</option>
+            </select>
+          </label>
+          <button id="clearBgImage" class="btn">Clear background image</button>
+        </div>
+      </details>
+
+      <div class="row" style="margin-top:8px">
+        <label style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="showGrid" style="width:auto;height:auto;margin:0"> Show grid
+        </label>
+        <label style="display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="snapGrid" style="width:auto;height:auto;margin:0"> Snap to grid
+        </label>
+        <label>Grid size
+          <input type="range" id="gridSize" class="slider" min="10" max="200" value="40">
+        </label>
+      </div>
+      <p class="hint">Tip: tap/click an image to select. Drag to move. Wheel/pinch to resize.</p>
+    </div>
+  </section>
+
+  <!-- CANVAS -->
+  <div class="canvasWrap">
+    <canvas id="canvas" width="960" height="720"></canvas>
+  </div>
+</div>
+
+<!-- Hidden WebGL canvas used as the GPU processing stage -->
+<canvas id="glStage" style="position:absolute;left:-99999px;top:-99999px;width:0;height:0"></canvas>
+
+<script>
+(() => {
+  // ---------- Elements ----------
+  const btnSingle = document.getElementById('btnSingle');
+  const btnCollage = document.getElementById('btnCollage');
+
+  const singleUI = document.getElementById('singleUI');
+  const collageUI = document.getElementById('collageUI');
+
+  const singleUpload = document.getElementById('singleUpload');
+  const singleShare = document.getElementById('singleShare');
+  const singleDownload = document.getElementById('singleDownload');
+
+  const toggleBorder = document.getElementById('toggleBorder');
+  const toggleCaption = document.getElementById('toggleCaption');
+  const toggleEffects = document.getElementById('toggleEffects');
+
+  const borderPanel = document.getElementById('borderPanel');
+  const captionPanel = document.getElementById('captionPanel');
+  const effectsPanel = document.getElementById('effectsPanel');
+
+  const borderColor = document.getElementById('borderColor');
+  const borderSize = document.getElementById('borderSize');
+  const borderPos   = document.getElementById('borderPos');
+
+  const captionText = document.getElementById('captionText');
+  const captionSize = document.getElementById('captionSize');
+  const captionColor= document.getElementById('captionColor');
+  const captionFont = document.getElementById('captionFont');
+
+  const toggleEmojiPicker = document.getElementById('toggleEmojiPicker');
+  const emojiPicker = document.getElementById('emojiPicker');
+
+  const fxTemp      = document.getElementById('fxTemp');
+  const fxTone      = document.getElementById('fxTone');
+  const fxExposure  = document.getElementById('fxExposure');
+  const fxBrightness= document.getElementById('fxBrightness');
+  const fxContrast  = document.getElementById('fxContrast');
+  const fxSaturation= document.getElementById('fxSaturation');
+  const fxBlur      = document.getElementById('fxBlur');
+  const fxGray      = document.getElementById('fxGray');
+  const fxSepia     = document.getElementById('fxSepia');
+  const fxInvert    = document.getElementById('fxInvert');
+  const effectsReset= document.getElementById('effectsReset');
+
+  const collageUpload = document.getElementById('collageUpload');
+  const collageShare = document.getElementById('collageShare');
+  const collageDownload = document.getElementById('collageDownload');
+  const bringFront = document.getElementById('bringFront');
+  const sendBack   = document.getElementById('sendBack');
+  const deleteItem = document.getElementById('deleteItem');
+
+  const showGrid   = document.getElementById('showGrid');
+  const snapGrid   = document.getElementById('snapGrid');
+  const gridSize   = document.getElementById('gridSize');
+
+  const bgColor    = document.getElementById('bgColor');
+  const bgImageInput = document.getElementById('bgImageInput');
+  const clearBgImage = document.getElementById('clearBgImage');
+  const bgFit      = document.getElementById('bgFit');
+
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Hidden WebGL stage
+  const glStage = document.getElementById('glStage');
+  const gl = glStage.getContext('webgl', {premultipliedAlpha:false}) || glStage.getContext('experimental-webgl');
+
+  // Basic guard
+  const WEBGL_OK = !!gl;
+  if (!WEBGL_OK) {
+    alert('WebGL not available — effects will be slower on this device.');
+  }
+
+  // ---------- State ----------
+  let mode = 'single';
+
+  // Single mode
+  let img = null;
+  const caption = { text:'', x:100, y:100, size:44, color:'#ffffff', font:'Arial', dragging:false };
+
+  const fx = {
+    temp:0, tone:0, exposure:0,
+    brightness:100, contrast:100, saturation:100,
+    blur:0, gray:0, sepia:0, invert:0
+  };
+
+  // Collage mode
+  const items = [];
+  let activeItem = null;
+  let draggingItem = false;
+  let lastTouchDist = 0;
+  let bgImage = null;
+
+  // Emojis
+  const EMOJIS = "😀 😃 😄 😁 😆 😂 😊 😉 🥰 😍 😘 😜 🤩 🤗 🤔 😎 😴 😇 😢 😭 😤 😱 🤯 😅 🙃 🙂 🤌 👍 👎 👋 🙌 💪 ✌️ 🫶 ❤️ 🧡 💛 💚 💙 💜 🤍 🖤 🎉 🎂 🎈 🔥 ✨ ⭐ 🌟 💡 📸 🖼️ 📍".split(' ');
+  emojiPicker.innerHTML = EMOJIS.map(e => `<button class="emoji-btn" type="button" style="font-size:24px;line-height:42px;text-align:center;cursor:pointer;background:#1a2140;border:1px solid var(--border);border-radius:10px">${e}</button>`).join('');
+  emojiPicker.addEventListener('click', (e) => {
+    if (e.target.classList.contains('emoji-btn')) {
+      captionText.value += e.target.textContent;
+      caption.text = captionText.value;
+      draw();
+    }
+  });
+  toggleEmojiPicker.addEventListener('click', () => {
+    const isOpen = emojiPicker.style.display !== 'none';
+    emojiPicker.style.display = isOpen ? 'none' : 'grid';
+    toggleEmojiPicker.classList.toggle('active', !isOpen);
+  });
+
+  // ---------- WebGL program ----------
+  let glProgram = null, glBuffer = null, glTex = null, uRes, uImg, uExposure, uGamma, uTemp, uBright, uContrast, uSaturation, uGray, uSepia, uInvert;
+  const vertSrc = `
+    attribute vec2 aPos;
+    varying vec2 vUv;
+    void main(){
+      vUv = (aPos+1.0)*0.5;
+      gl_Position = vec4(aPos, 0.0, 1.0);
+    }
+  `;
+  const fragSrc = `
+    precision mediump float;
+    varying vec2 vUv;
+    uniform sampler2D uImg;
+    uniform vec2 uRes;
+
+    // Effect params
+    uniform float uExposure;   // -2..+2 stops
+    uniform float uGamma;      // 0.5..2.0  (tone)
+    uniform float uTemp;       // -1..+1
+    uniform float uBright;     // 0..2
+    uniform float uContrast;   // 0..2 (1 = no change)
+    uniform float uSaturation; // 0..2
+    uniform float uGray;       // 0..1
+    uniform float uSepia;      // 0..1
+    uniform float uInvert;     // 0..1
+
+    vec3 applyExposure(vec3 c, float stops){
+      float factor = pow(2.0, stops);
+      return c * factor;
+    }
+    vec3 applyGamma(vec3 c, float gamma){
+      return pow(c, vec3(1.0 / gamma));
+    }
+    vec3 applyTemperature(vec3 c, float t){
+      // t: -1..+1 cool..warm, simple RB shift
+      float rShift = mix(-0.2, 0.8, (t+1.0)/2.0);
+      float bShift = mix( 0.8,-0.2, (t+1.0)/2.0);
+      return vec3(clamp(c.r + rShift*0.05, 0.0, 1.0), c.g, clamp(c.b + bShift*0.05, 0.0, 1.0));
+    }
+    vec3 applyBrightnessContrast(vec3 c, float b, float ct){
+      // b: 0..2 ; ct: 0..2 -> convert to -1..1 space
+      c *= b;
+      float t = 0.5*(1.0 - ct);
+      return c*ct + t;
+    }
+    vec3 applySaturation(vec3 c, float sat){
+      float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      return mix(vec3(l), c, sat);
+    }
+    vec3 applyGrayscale(vec3 c, float a){
+      float l = dot(c, vec3(0.299, 0.587, 0.114));
+      return mix(c, vec3(l), a);
+    }
+    vec3 applySepia(vec3 c, float a){
+      vec3 s = vec3(
+        dot(c, vec3(0.393, 0.769, 0.189)),
+        dot(c, vec3(0.349, 0.686, 0.168)),
+        dot(c, vec3(0.272, 0.534, 0.131))
+      );
+      return mix(c, s, a);
+    }
+    vec3 applyInvert(vec3 c, float a){
+      return mix(c, 1.0 - c, a);
+    }
+
+    void main(){
+      vec4 tex = texture2D(uImg, vUv);
+      vec3 c = tex.rgb;
+
+      // Exposure, Tone (gamma), Temperature
+      c = applyExposure(c, uExposure);
+      c = applyGamma(c, uGamma);
+      c = applyTemperature(c, uTemp);
+
+      // Brightness / Contrast / Saturation
+      c = applyBrightnessContrast(c, uBright, uContrast);
+      c = applySaturation(c, uSaturation);
+
+      // Stylizers
+      c = applyGrayscale(c, uGray);
+      c = applySepia(c, uSepia);
+      c = applyInvert(c, uInvert);
+
+      gl_FragColor = vec4(clamp(c, 0.0, 1.0), tex.a);
+    }
+  `;
+  function createShader(gl, type, src){
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(sh)); return null;
+    }
+    return sh;
+  }
+  function createProgram(){
+    const vs = createShader(gl, gl.VERTEX_SHADER, vertSrc);
+    const fs = createShader(gl, gl.FRAGMENT_SHADER, fragSrc);
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      console.error(gl.getProgramInfoLog(prog)); return null;
+    }
+    gl.useProgram(prog);
+    const posLoc = gl.getAttribLocation(prog, 'aPos');
+    glBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, glBuffer);
+    // full-screen quad
+    const quad = new Float32Array([
+      -1,-1,  1,-1, -1, 1,
+       1,-1,  1, 1, -1, 1
+    ]);
+    gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+    uRes = gl.getUniformLocation(prog,'uRes');
+    uImg = gl.getUniformLocation(prog,'uImg');
+    uExposure = gl.getUniformLocation(prog,'uExposure');
+    uGamma = gl.getUniformLocation(prog,'uGamma');
+    uTemp = gl.getUniformLocation(prog,'uTemp');
+    uBright = gl.getUniformLocation(prog,'uBright');
+    uContrast = gl.getUniformLocation(prog,'uContrast');
+    uSaturation = gl.getUniformLocation(prog,'uSaturation');
+    uGray = gl.getUniformLocation(prog,'uGray');
+    uSepia = gl.getUniformLocation(prog,'uSepia');
+    uInvert = gl.getUniformLocation(prog,'uInvert');
+
+    glProgram = prog;
+  }
+  if (WEBGL_OK) createProgram();
+
+  function ensureTexture(image){
+    if (!WEBGL_OK) return;
+    if (!glTex) glTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, glTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+  }
+
+  function renderWebGLToStage(image, outW, outH){
+    if (!WEBGL_OK) return null;
+    glStage.width = outW; glStage.height = outH;
+    gl.viewport(0,0,outW,outH);
+    gl.useProgram(glProgram);
+    gl.uniform2f(uRes, outW, outH);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, glTex);
+    gl.uniform1i(uImg, 0);
+
+    // Map sliders to shader ranges
+    const exposureStops = fx.exposure / 50.0; // -2..+2
+    const gamma = fx.tone >= 0 ? (1.0 + fx.tone/100.0) : (1.0 / (1.0 - fx.tone/100.0)); // ~0.5..2
+    const temp = fx.temp / 100.0; // -1..+1
+    const bright = fx.brightness / 100.0; // 0..2
+    const contrast = fx.contrast / 100.0; // 0..2
+    const saturation = fx.saturation / 100.0; // 0..2
+    const grayAmt = fx.gray / 100.0;
+    const sepiaAmt = fx.sepia / 100.0;
+    const invertAmt = fx.invert / 100.0;
+
+    gl.uniform1f(uExposure, exposureStops);
+    gl.uniform1f(uGamma, gamma);
+    gl.uniform1f(uTemp, temp);
+    gl.uniform1f(uBright, bright);
+    gl.uniform1f(uContrast, contrast);
+    gl.uniform1f(uSaturation, saturation);
+    gl.uniform1f(uGray, grayAmt);
+    gl.uniform1f(uSepia, sepiaAmt);
+    gl.uniform1f(uInvert, invertAmt);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    return glStage;
+  }
+
+  // ---------- Helpers ----------
+  function setMode(m){
+    if (mode === m) return;
+    mode = m;
+    if (mode==='single'){ btnSingle.classList.add('active'); btnCollage.classList.remove('active'); singleUI.style.display='grid'; collageUI.style.display='none'; }
+    else { btnCollage.classList.add('active'); btnSingle.classList.remove('active'); collageUI.style.display='grid'; singleUI.style.display='none'; }
+    resetSingle();
+    resetCollage();
+    draw();
+  }
+
+  function resetSingle(){
+    img = null;
+    caption.text=''; caption.x=100; caption.y=100; caption.size=44; caption.color='#ffffff'; caption.font='Arial'; caption.dragging=false;
+
+    fx.temp=0; fx.tone=0; fx.exposure=0;
+    fx.brightness=100; fx.contrast=100; fx.saturation=100; fx.blur=0; fx.gray=0; fx.sepia=0; fx.invert=0;
+
+    fxTemp.value=0; fxTone.value=0; fxExposure.value=0;
+    fxBrightness.value=100; fxContrast.value=100; fxSaturation.value=100; fxBlur.value=0; fxGray.value=0; fxSepia.value=0; fxInvert.value=0;
+
+    borderColor.value = '#ffffff'; borderSize.value=20; borderPos.value='all';
+
+    [toggleBorder, toggleCaption, toggleEffects, singleShare, singleDownload].forEach(b => b.disabled = true);
+    borderPanel.style.display='none'; captionPanel.style.display='none'; effectsPanel.style.display='none';
+    singleUpload.value='';
+  }
+
+  function resetCollage(){
+    items.length = 0;
+    activeItem = null; draggingItem = false; lastTouchDist = 0;
+    collageUpload.value='';
+    [collageDownload, collageShare, bringFront, sendBack, deleteItem].forEach(b=>b.disabled=true);
+
+    bgImage = null;
+    bgImageInput.value='';
+    bgColor.value = '#0b1024';
+    bgFit.value = 'cover';
+
+    showGrid.checked = false; snapGrid.checked = false; gridSize.value = 40;
+  }
+
+  function sizeForViewport(nw, nh){
+    const maxW = Math.min(980, Math.floor(window.innerWidth*0.95));
+    const maxH = Math.floor(window.innerHeight*0.7);
+    const s = Math.min(maxW/nw, maxH/nh, 1);
+    return { w: Math.floor(nw*s), h: Math.floor(nh*s) };
+  }
+
+  function drawGrid(){
+    if (!showGrid.checked) return;
+    const step = parseInt(gridSize.value||'40',10);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= canvas.width; x += step){
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke();
+    }
+    for (let y = 0; y <= canvas.height; y += step){
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    if (mode==='single' && img){
+      const baseW = img.naturalWidth, baseH = img.naturalHeight;
+      const sized = sizeForViewport(baseW, baseH);
+
+      // Borders
+      const bpx = parseInt(borderSize.value||'0',10);
+      let t=0,r=0,bm=0,l=0;
+      const pos = borderPos.value;
+      if (pos==='all'){ t=r=bm=l=bpx; }
+      else if (pos==='topBottom'){ t=bm=bpx; }
+      else if (pos==='leftRight'){ l=r=bpx; }
+
+      canvas.width = sized.w + l + r;
+      canvas.height = sized.h + t + bm;
+
+      // Fill border
+      ctx.fillStyle = borderColor.value || '#ffffff';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      // --- GPU stage ---
+      if (WEBGL_OK){
+        ensureTexture(img);
+        const stage = renderWebGLToStage(img, sized.w, sized.h);
+        // Blur only the photo (hardware-accelerated canvas filter)
+        ctx.save();
+        if (fx.blur>0) ctx.filter = `blur(${fx.blur}px)`;
+        ctx.drawImage(stage, 0, 0, stage.width, stage.height, l, t, sized.w, sized.h);
+        ctx.restore();
+      } else {
+        // Fallback: no WebGL, just draw plain (still can use CSS filters a bit)
+        ctx.drawImage(img, 0, 0, baseW, baseH, l, t, sized.w, sized.h);
+      }
+
+      // --- Caption (not affected by filters/blur) ---
+      if (caption.text){
+        ctx.font = `${caption.size}px ${caption.font}`;
+        ctx.fillStyle = caption.color;
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(caption.text, caption.x, caption.y);
+      }
+    }
+
+    if (mode==='collage'){
+      const targetW = Math.min(980, Math.floor(window.innerWidth*0.95));
+      const targetH = Math.floor(window.innerHeight*0.7);
+      if (canvas.width!==targetW || canvas.height!==targetH){ canvas.width=targetW; canvas.height=targetH; }
+
+      // Background color
+      ctx.fillStyle = bgColor.value || '#0b1024';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      // Background image
+      if (bgImage){
+        const cw = canvas.width, ch = canvas.height;
+        const iw = bgImage.naturalWidth, ih = bgImage.naturalHeight;
+        let scale = (bgFit.value==='cover') ? Math.max(cw/iw, ch/ih) : Math.min(cw/iw, ch/ih);
+        const dw = iw*scale, dh = ih*scale;
+        const dx = (cw - dw)/2, dy = (ch - dh)/2;
+        ctx.drawImage(bgImage, dx, dy, dw, dh);
+      }
+
+      // Grid
+      drawGrid();
+
+      // Items
+      items.forEach(o=>{
+        const w = o.img.width * o.scale;
+        const h = o.img.height * o.scale;
+        ctx.drawImage(o.img, o.x, o.y, w, h);
+      });
+
+      // Outline active
+      if (activeItem){
+        const w = activeItem.img.width * activeItem.scale;
+        const h = activeItem.img.height * activeItem.scale;
+        ctx.strokeStyle = '#5b8cff'; ctx.lineWidth = 2; ctx.strokeRect(activeItem.x, activeItem.y, w, h);
+      }
+    }
+  }
+
+  // ---------- Mode switch ----------
+  btnSingle.addEventListener('click', ()=>setMode('single'));
+  btnCollage.addEventListener('click', ()=>setMode('collage'));
+
+  // ---------- Single: Upload ----------
+  singleUpload.addEventListener('change', (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ev=>{
+      img = new Image();
+      img.onload = ()=>{
+        [toggleBorder, toggleCaption, toggleEffects, singleShare, singleDownload].forEach(b => b.disabled = false);
+        const sz = sizeForViewport(img.naturalWidth, img.naturalHeight);
+        caption.x = Math.round(sz.w*0.5); caption.y = Math.round(sz.h - 20);
+        draw();
+      };
+      img.src = ev.target.result;
+    };
+    r.readAsDataURL(f);
+  });
+
+  // ---------- Single: Panels show/hide ----------
+  toggleBorder.addEventListener('click', ()=>{
+    const s = borderPanel.style.display!=='none';
+    borderPanel.style.display = s?'none':'block';
+    captionPanel.style.display = 'none';
+    effectsPanel.style.display = 'none';
+  });
+  toggleCaption.addEventListener('click', ()=>{
+    const s = captionPanel.style.display!=='none';
+    captionPanel.style.display = s?'none':'block';
+    borderPanel.style.display = 'none';
+    effectsPanel.style.display = 'none';
+  });
+  toggleEffects.addEventListener('click', ()=>{
+    const s = effectsPanel.style.display!=='none';
+    effectsPanel.style.display = s?'none':'block';
+    borderPanel.style.display = 'none';
+    captionPanel.style.display = 'none';
+  });
+
+  // ---------- Single: Inputs ----------
+  [borderColor, borderSize, borderPos].forEach(el=>el.addEventListener('input', draw));
+  [captionText, captionSize, captionColor, captionFont].forEach(el=>el.addEventListener('input', ()=>{
+    caption.text = captionText.value || '';
+    caption.size = parseInt(captionSize.value||'44',10);
+    caption.color = captionColor.value || '#ffffff';
+    caption.font = captionFont.value || 'Arial';
+    draw();
+  }));
+
+  function updateFx(){
+    fx.temp = +fxTemp.value;
+    fx.tone = +fxTone.value;
+    fx.exposure = +fxExposure.value;
+    fx.brightness = +fxBrightness.value;
+    fx.contrast   = +fxContrast.value;
+    fx.saturation = +fxSaturation.value;
+    fx.blur       = +fxBlur.value;
+    fx.gray       = +fxGray.value;
+    fx.sepia      = +fxSepia.value;
+    fx.invert     = +fxInvert.value;
+    draw();
+  }
+  [fxTemp,fxTone,fxExposure,fxBrightness,fxContrast,fxSaturation,fxBlur,fxGray,fxSepia,fxInvert].forEach(s=>s.addEventListener('input', updateFx));
+  effectsReset.addEventListener('click', ()=>{
+    fxTemp.value=0; fxTone.value=0; fxExposure.value=0;
+    fxBrightness.value=100; fxContrast.value=100; fxSaturation.value=100; fxBlur.value=0; fxGray.value=0; fxSepia.value=0; fxInvert.value=0;
+    updateFx();
+  });
+
+  // Drag caption (mouse)
+  function hitCaption(x,y){
+    if(!caption.text) return false;
+    ctx.font = `${caption.size}px ${caption.font}`;
+    const w = ctx.measureText(caption.text).width;
+    const h = caption.size;
+    const left = caption.x, top = caption.y - h;
+    return (x>=left && x<=left+w && y>=top && y<=top+h);
+  }
+  canvas.addEventListener('mousedown',(e)=>{
+    if (mode!=='single' || !img) return;
+    if (hitCaption(e.offsetX, e.offsetY)) caption.dragging = true;
+  });
+  canvas.addEventListener('mousemove',(e)=>{
+    if (mode!=='single' || !img) return;
+    if (caption.dragging){ caption.x=e.offsetX; caption.y=e.offsetY; draw(); }
+  });
+  window.addEventListener('mouseup',()=>{ caption.dragging=false; });
+
+  // Touch drag caption
+  canvas.addEventListener('touchstart',(e)=>{
+    if (mode!=='single' || !img) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.touches[0].clientX-rect.left, y = e.touches[0].clientY-rect.top;
+    if (hitCaption(x,y)) caption.dragging=true;
+  }, {passive:true});
+  canvas.addEventListener('touchmove',(e)=>{
+    if (mode!=='single' || !img || !caption.dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    caption.x = e.touches[0].clientX-rect.left; caption.y = e.touches[0].clientY-rect.top; draw();
+  }, {passive:true});
+  canvas.addEventListener('touchend',()=>{ caption.dragging=false; });
+
+  // ---------- Share / Download (Single) ----------
+  function canvasToFile(cb){
+    canvas.toBlob(blob=>{
+      const file = new File([blob], 'photo.png', {type:'image/png'});
+      cb(file);
+    }, 'image/png', 0.95);
+  }
+  singleShare.addEventListener('click', async ()=>{
+    if (!img) return;
+    canvasToFile(async (file)=>{
+      if (navigator.canShare && navigator.canShare({files:[file]})){
+        try {
+          await navigator.share({title:'Edited Photo', files:[file]});
+        } catch(e){}
+      } else {
+        // Fallback: download
+        const a=document.createElement('a'); a.download='photo.png'; a.href=URL.createObjectURL(file); a.click();
+      }
+    });
+  });
+  singleDownload.addEventListener('click', ()=>{
+    if (!img) return;
+    const a = document.createElement('a');
+    a.download = 'photo-edited.png';
+    a.href = canvas.toDataURL();
+    a.click();
+  });
+
+  // ---------- Collage ----------
+  collageUpload.addEventListener('change',(e)=>{
+    const files = Array.from(e.target.files); if(!files.length) return;
+    let loaded=0;
+    files.forEach(f=>{
+      const r = new FileReader();
+      r.onload = ev=>{
+        const im = new Image();
+        im.onload = ()=>{
+          const baseScale = Math.min(canvas.width/(im.width*2), canvas.height/(im.height*2));
+          items.push({
+            img: im,
+            x: canvas.width/2 - (im.width*baseScale)/2 + (Math.random()*80-40),
+            y: canvas.height/2 - (im.height*baseScale)/2 + (Math.random()*80-40),
+            scale: Math.max(0.2, Math.min(0.8, baseScale || 0.5))
+          });
+          loaded++; activeItem = items[items.length-1];
+          if (loaded===files.length){
+            [collageDownload, collageShare, bringFront, sendBack, deleteItem].forEach(b=>b.disabled=false);
+            draw();
+          } else { draw(); }
+        };
+        im.src = ev.target.result;
+      };
+      r.readAsDataURL(f);
+    });
+  });
+
+  function itemAt(x,y){
+    for (let i=items.length-1;i>=0;i--){
+      const it = items[i]; const w=it.img.width*it.scale, h=it.img.height*it.scale;
+      if (x>=it.x && x<=it.x+w && y>=it.y && y<=it.y+h) return items[i];
+    }
+    return null;
+  }
+  bringFront.addEventListener('click', ()=>{
+    if (!activeItem) return;
+    const idx = items.indexOf(activeItem);
+    if (idx >= 0){ items.splice(idx,1); items.push(activeItem); draw(); }
+  });
+  sendBack.addEventListener('click', ()=>{
+    if (!activeItem) return;
+    const idx = items.indexOf(activeItem);
+    if (idx >= 0){ items.splice(idx,1); items.unshift(activeItem); draw(); }
+  });
+  deleteItem.addEventListener('click', ()=>{
+    if (!activeItem) return;
+    const idx = items.indexOf(activeItem);
+    if (idx >= 0){ items.splice(idx,1); }
+    activeItem = items.length? items[items.length-1] : null;
+    if (!items.length){ [collageDownload, collageShare, bringFront, sendBack, deleteItem].forEach(b=>b.disabled=true); }
+    draw();
+  });
+
+  // Background controls
+  bgColor.addEventListener('input', draw);
+  bgFit.addEventListener('input', draw);
+  bgImageInput.addEventListener('change', (e)=>{
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ev=>{
+      const im = new Image();
+      im.onload = ()=>{ bgImage = im; draw(); };
+      im.src = ev.target.result;
+    };
+    r.readAsDataURL(f);
+  });
+  clearBgImage.addEventListener('click', ()=>{ bgImage=null; bgImageInput.value=''; draw(); });
+
+  // Mouse interactions
+  canvas.addEventListener('mousedown',(e)=>{
+    if (mode!=='collage') return;
+    const hit = itemAt(e.offsetX,e.offsetY);
+    if (hit){
+      activeItem=hit; draggingItem=true;
+      activeItem._dx=e.offsetX-hit.x; activeItem._dy=e.offsetY-hit.y; draw();
+    } else { activeItem=null; draw(); }
+  });
+  canvas.addEventListener('mousemove',(e)=>{
+    if (mode!=='collage') return;
+    if (draggingItem && activeItem){
+      let nx = e.offsetX-activeItem._dx;
+      let ny = e.offsetY-activeItem._dy;
+      if (snapGrid.checked){ nx = snapCoord(nx); ny = snapCoord(ny); }
+      activeItem.x=nx; activeItem.y=ny; draw();
+    }
+  });
+  window.addEventListener('mouseup',()=>{ draggingItem=false; });
+
+  function snapCoord(v){
+    const step = parseInt(gridSize.value||'40',10);
+    return Math.round(v / step) * step;
+  }
+
+  // Wheel resize (desktop)
+  canvas.addEventListener('wheel',(e)=>{
+    if (mode!=='collage' || !activeItem) return;
+    e.preventDefault();
+    const factor = (e.deltaY<0)?1.06:0.94;
+    activeItem.scale = Math.max(0.05, Math.min(5, activeItem.scale*factor));
+    draw();
+  }, {passive:false});
+
+  // Touch: drag & pinch
+  canvas.addEventListener('touchstart',(e)=>{
+    if (mode!=='collage') return;
+    const rect = canvas.getBoundingClientRect();
+    if (e.touches.length===1){
+      const x=e.touches[0].clientX-rect.left, y=e.touches[0].clientY-rect.top;
+      const hit=itemAt(x,y);
+      if (hit){
+        activeItem=hit; draggingItem=true;
+        activeItem._dx=x-hit.x; activeItem._dy=y-hit.y; draw();
+      } else { activeItem=null; draw(); }
+    } else if (e.touches.length===2){ lastTouchDist = touchDist(e.touches); }
+  }, {passive:true});
+
+  canvas.addEventListener('touchmove',(e)=>{
+    if (mode!=='collage') return;
+    const rect = canvas.getBoundingClientRect();
+    if (e.touches.length===1 && draggingItem && activeItem){
+      let x=e.touches[0].clientX-rect.left, y=e.touches[0].clientY-rect.top;
+      let nx = x-activeItem._dx, ny = y-activeItem._dy;
+      if (snapGrid.checked){ nx = snapCoord(nx); ny = snapCoord(ny); }
+      activeItem.x=nx; activeItem.y=ny; draw();
+    } else if (e.touches.length===2 && activeItem){
+      e.preventDefault();
+      const d = touchDist(e.touches);
+      if (lastTouchDist){
+        const factor = d/lastTouchDist;
+        activeItem.scale = Math.max(0.05, Math.min(5, activeItem.scale*factor));
+        draw();
+      }
+      lastTouchDist = d;
+    }
+  }, {passive:false});
+  canvas.addEventListener('touchend',()=>{ draggingItem=false; lastTouchDist=0; });
+
+  function touchDist(t){
+    const dx = t[0].clientX - t[1].clientX;
+    const dy = t[0].clientY - t[1].clientY;
+    return Math.hypot(dx,dy);
+  }
+
+  // Collage share/download
+  collageShare.addEventListener('click', ()=>{
+    if (!items.length) return;
+    canvasToFile(async (file)=>{
+      if (navigator.canShare && navigator.canShare({files:[file]})){
+        try { await navigator.share({title:'My Collage', files:[file]}); } catch(e){}
+      } else {
+        const a=document.createElement('a'); a.download='collage.png'; a.href=URL.createObjectURL(file); a.click();
+      }
+    });
+  });
+  collageDownload.addEventListener('click', ()=>{
+    if (!items.length) return;
+    const a=document.createElement('a'); a.download='collage.png'; a.href=canvas.toDataURL(); a.click();
+  });
+
+  // Grid controls
+  [showGrid, snapGrid, gridSize].forEach(el=>el.addEventListener('input', draw));
+  window.addEventListener('resize', draw);
+
+  // Init
+  draw();
+
+  // Utility for grid snapping used above
+  function snapGridCoord(v){ const step=parseInt(gridSize.value||'40',10); return Math.round(v/step)*step; }
+})();
+</script>
+</body>
+</html>
