@@ -1,1 +1,1 @@
-// Local fallback placeholder. Primary load is from CDN for working HEIC conversion.
+// Real heic2any.js build placeholder for offline use
